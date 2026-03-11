@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Capture To Do</title>
+<script>
+(function() {
+  var lang = (navigator.language || navigator.userLanguage || '').toLowerCase();
+  if (lang.startsWith('ko')) {
+    window.location.replace('ko.html');
+  } else {
+    window.location.replace('en.html');
+  }
+})();
+</script>
+</head>
+<body></body>
+</html>

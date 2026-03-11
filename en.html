@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Capture To Do — One screenshot becomes a to-do</title>
+<meta name="description" content="Capture a screenshot and share it — AI turns it into a to-do and reminds you until it's done.">
+<link rel="icon" type="image/png" href="아이콘.png">
+<link rel="apple-touch-icon" href="아이콘.png">
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" rel="stylesheet">
+<style>
+:root {
+  --bg: #ffffff;
+  --bg-dark: #0a0a0a;
+  --bg-muted: #f6f6f6;
+  --text: #111111;
+  --text-inv: #ffffff;
+  --muted: #888888;
+  --muted-light: #bbbbbb;
+  --primary: #0891B2;
+  --primary-dark: #0E7490;
+  --primary-glow: rgba(8,145,178,0.12);
+  --action: #F59E0B;
+  --action-light: #FEF3C7;
+  --border: rgba(0,0,0,0.06);
+  --radius: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --font: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  line-height: 1.6;
+}
+
+/* ===== ANIMATED BG ===== */
+.bg-orbs { position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; }
+.orb { position: absolute; border-radius: 50%; filter: blur(100px); }
+.orb-1 { width: 600px; height: 600px; background: rgba(8,145,178,0.10); top: -200px; left: -100px; animation: orbMove1 30s ease-in-out infinite; }
+.orb-2 { width: 500px; height: 500px; background: rgba(6,182,212,0.07); bottom: -100px; right: -150px; animation: orbMove2 35s ease-in-out infinite; }
+.orb-3 { width: 400px; height: 400px; background: rgba(245,158,11,0.05); top: 40%; left: 40%; animation: orbMove3 40s ease-in-out infinite; }
+
+@keyframes orbMove1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(150px, 100px) scale(1.1); }
+  50% { transform: translate(50px, 250px) scale(0.95); }
+  75% { transform: translate(-80px, 120px) scale(1.05); }
+}
+@keyframes orbMove2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(-120px, -80px) scale(1.05); }
+  50% { transform: translate(-200px, -150px) scale(1.1); }
+  75% { transform: translate(-60px, -200px) scale(0.95); }
+}
+@keyframes orbMove3 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(100px, -100px) scale(1.1); }
+  66% { transform: translate(-100px, 50px) scale(0.9); }
+}
+
+/* Grain overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 10000;
+}
+
+/* Mouse glow */
+.mouse-glow {
+  position: fixed; width: 500px; height: 500px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(8,145,178,0.05) 0%, transparent 70%);
+  pointer-events: none; transform: translate(-50%, -50%);
+  z-index: 0; opacity: 0;
+  transition: left 0.5s var(--ease), top 0.5s var(--ease);
+}
+.mouse-glow.active { opacity: 1; }
+
+.container { max-width: 1100px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+/* ===== REVEAL ===== */
+.reveal {
+  opacity: 0; transform: translateY(40px);
+  transition: opacity 0.9s var(--ease), transform 0.9s var(--ease);
+}
+.reveal.visible { opacity: 1; transform: translateY(0); }
+.reveal.d1 { transition-delay: 0.1s; }
+.reveal.d2 { transition-delay: 0.2s; }
+.reveal.d3 { transition-delay: 0.3s; }
+.reveal.d4 { transition-delay: 0.4s; }
+.reveal.d5 { transition-delay: 0.5s; }
+
+/* ===== NAV ===== */
+.nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: 64px; transition: all 0.4s var(--ease); }
+.nav.scrolled { background: rgba(255,255,255,0.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); border-bottom: 1px solid var(--border); }
+.nav-inner { max-width: 1100px; margin: 0 auto; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; height: 100%; }
+.nav-logo { display: flex; align-items: center; text-decoration: none; }
+.nav-logo-img { height: 44px; width: auto; position: relative; top: 1px; }
+.nav-links { display: flex; align-items: center; gap: 32px; list-style: none; }
+.nav-links a { font-size: 14px; font-weight: 500; color: var(--muted); text-decoration: none; transition: color 0.2s; letter-spacing: -0.2px; }
+.nav-links a:hover { color: var(--text); }
+.nav-cta { background: var(--text) !important; color: var(--text-inv) !important; font-weight: 600 !important; padding: 10px 20px !important; border-radius: 10px; font-size: 14px !important; transition: all 0.25s var(--ease) !important; }
+.nav-cta:hover { opacity: 0.85 !important; transform: translateY(-1px) !important; }
+.nav-lang { font-size: 13px !important; font-weight: 600 !important; color: var(--primary) !important; border: 1.5px solid var(--primary) !important; padding: 6px 14px !important; border-radius: 8px; transition: all 0.25s var(--ease) !important; }
+.nav-lang:hover { background: var(--primary) !important; color: #fff !important; }
+
+/* ===== HERO ===== */
+.hero { padding: 180px 0 200px; text-align: center; position: relative; }
+.hero-label {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 600; color: var(--primary);
+  padding: 8px 16px; border-radius: 100px;
+  background: rgba(8,145,178,0.06); border: 1px solid rgba(8,145,178,0.1);
+  margin-bottom: 36px; letter-spacing: -0.2px;
+}
+.hero-label-dot { width: 6px; height: 6px; background: var(--primary); border-radius: 50%; animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.8); } }
+
+.hero h1 {
+  font-size: clamp(48px, 8vw, 84px); font-weight: 800;
+  line-height: 1.05; letter-spacing: -1.5px;
+  margin-bottom: 28px;
+}
+.hero h1 .accent {
+  background: linear-gradient(110deg, var(--primary) 0%, var(--primary) 40%, #67E8F9 50%, var(--primary) 60%, var(--primary) 100%);
+  background-size: 300% auto;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  animation: textFlash 5s 2s ease-in-out infinite;
+}
+@keyframes textFlash { 0%, 30% { background-position: 200% center; } 50%, 100% { background-position: -100% center; } }
+
+.hero-sub-small { font-size: 15px; color: var(--muted); font-weight: 400; letter-spacing: -0.2px; margin-bottom: 12px; }
+.hero-sub { font-size: 19px; line-height: 1.7; color: var(--muted); max-width: 680px; margin: 0 auto 48px; font-weight: 400; letter-spacing: -0.2px; }
+
+.app-buttons { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.app-btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 14px 24px; border-radius: var(--radius);
+  text-decoration: none; transition: all 0.3s var(--ease);
+  cursor: pointer; border: none; font-family: var(--font);
+  position: relative; overflow: hidden;
+}
+.app-btn-dark { background: var(--text); color: var(--text-inv); }
+.app-btn-dark:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.15); }
+.app-btn-light { background: var(--bg); color: var(--text); box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.1); }
+.app-btn-light:hover { transform: translateY(-2px); box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.15), 0 12px 40px rgba(0,0,0,0.06); }
+.app-btn-icon { display: flex; align-items: center; }
+.app-btn-text { text-align: left; }
+.app-btn-label { font-size: 10px; opacity: 0.55; line-height: 1; font-weight: 500; }
+.app-btn-store { font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: -0.3px; }
+
+.hero-link {
+  display: inline-flex; align-items: center; gap: 4px; margin-top: 24px;
+  font-size: 14px; font-weight: 500; color: var(--muted);
+  text-decoration: none; transition: color 0.2s;
+}
+.hero-link:hover { color: var(--primary); }
+
+/* ===== HERO MOCKUP ===== */
+.hero-mockup { margin-top: 80px; position: relative; }
+.mockup-wrap { max-width: 800px; margin: 0 auto; position: relative; transition: transform 0.3s ease-out; }
+.phone {
+  width: 280px; margin: 0 auto; background: var(--bg);
+  border-radius: 40px; border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 50px 100px -20px rgba(0,0,0,0.10), 0 20px 60px -30px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.02);
+  overflow: hidden; position: relative;
+}
+.phone-notch { width: 100px; height: 24px; background: var(--bg); border-radius: 0 0 16px 16px; margin: 0 auto; border-bottom: 1px solid rgba(0,0,0,0.03); }
+.phone-screen { padding: 10px 16px 24px; }
+.phone-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 14px; }
+.phone-title { font-weight: 800; font-size: 17px; letter-spacing: -0.5px; }
+.phone-date { font-size: 11px; color: var(--muted); font-weight: 500; }
+
+.todo-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 11px; margin-bottom: 5px; border: 1px solid transparent; position: relative; }
+.todo-item.new { border-color: rgba(8,145,178,0.2); background: rgba(8,145,178,0.03); animation: slideIn 0.5s 1.5s var(--ease-out) both; }
+.todo-item.done-anim { animation: fadeIn 0.4s 0.6s both; }
+.todo-item.normal-anim { animation: fadeIn 0.4s 0.8s both; }
+@keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.todo-check { width: 18px; height: 18px; min-width: 18px; max-width: 18px; border-radius: 5px; border: 1.5px solid rgba(0,0,0,0.25); flex-shrink: 0; flex-grow: 0; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.03); }
+.todo-check.checked { background: #10B981; border-color: #10B981; }
+.todo-check.primary { border-color: var(--primary); background: rgba(8,145,178,0.06); }
+.todo-body { flex: 1; min-width: 0; }
+.todo-text { font-size: 12px; font-weight: 600; line-height: 1.4; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-text.done { text-decoration: line-through; color: var(--muted-light); font-weight: 400; }
+.todo-meta { font-size: 10px; color: var(--muted); margin-top: 2px; font-weight: 500; display: flex; align-items: center; gap: 3px; }
+.todo-tag { font-size: 8px; padding: 2px 6px; border-radius: 4px; font-weight: 700; letter-spacing: 0.02em; position: absolute; top: -4px; right: -4px; }
+.tag-remind { background: var(--action-light); color: #92400E; }
+.tag-new { background: rgba(8,145,178,0.08); color: var(--primary-dark); }
+
+/* Floating cards */
+.float-capture {
+  position: absolute; left: -60px; top: 220px; width: 280px;
+  background: rgba(255,255,255,0.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border-radius: 18px; border: 1px solid rgba(0,0,0,0.05);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.07); overflow: hidden;
+  animation: floatInL 0.8s 0.8s var(--ease-out) both;
+}
+.float-capture-img img { width: 100%; display: block; object-fit: cover; max-height: 150px; }
+.imsg-mock { padding: 14px 12px; background: #f2f2f7; }
+.imsg-header { text-align: center; margin-bottom: 10px; }
+.imsg-name { font-size: 13px; font-weight: 700; color: #1c1c1e; letter-spacing: -0.2px; }
+.imsg-sub { font-size: 9px; color: #8e8e93; font-weight: 500; }
+.imsg-bubble { max-width: 85%; padding: 8px 12px; border-radius: 16px; font-size: 12px; line-height: 1.45; font-weight: 500; letter-spacing: -0.1px; margin-bottom: 4px; }
+.imsg-bubble.recv { background: #e5e5ea; color: #1c1c1e; border-bottom-left-radius: 6px; }
+.imsg-bubble.sent { background: #007aff; color: #fff; margin-left: auto; border-bottom-right-radius: 6px; }
+.imsg-time { text-align: center; font-size: 9px; color: #8e8e93; margin: 6px 0; font-weight: 500; }
+.float-capture-body { padding: 12px 14px; display: flex; align-items: center; gap: 10px; }
+.float-capture-icon { width: 32px; height: 32px; background: rgba(8,145,178,0.08); border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.float-capture-label { font-size: 14px; font-weight: 700; color: var(--primary-dark); letter-spacing: -0.3px; }
+.float-capture-sub { font-size: 12px; color: var(--muted); font-weight: 500; }
+@keyframes floatInL { from { opacity: 0; transform: translateX(-30px) rotate(-2deg); } to { opacity: 1; transform: translateX(0) rotate(0); } }
+
+.float-reminder {
+  position: absolute; right: -50px; top: 50px; width: 260px;
+  background: rgba(255,255,255,0.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  border-radius: 18px; border: 1px solid rgba(0,0,0,0.05);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.07); padding: 18px;
+  animation: floatInR 0.8s 1s var(--ease-out) both;
+}
+@keyframes floatInR { from { opacity: 0; transform: translateX(30px) rotate(2deg); } to { opacity: 1; transform: translateX(0) rotate(0); } }
+
+.float-reminder-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.float-reminder-bell {
+  width: 32px; height: 32px; background: var(--action-light); border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  animation: bellShake 1s 2s both;
+}
+@keyframes bellShake { 0%, 100% { transform: rotate(0); } 15% { transform: rotate(12deg); } 30% { transform: rotate(-10deg); } 45% { transform: rotate(6deg); } 60% { transform: rotate(-4deg); } 75% { transform: rotate(2deg); } }
+.float-reminder-title { font-size: 14px; font-weight: 700; letter-spacing: -0.3px; }
+.float-reminder-time { font-size: 11px; color: var(--muted); font-weight: 500; }
+.float-reminder-body { font-size: 12px; color: #555; line-height: 1.6; padding: 10px 12px; background: rgba(0,0,0,0.025); border-radius: 10px; font-weight: 500; }
+
+/* ===== PROBLEM (DARK) ===== */
+.problem {
+  background: var(--bg-dark); padding: 160px 0; position: relative; overflow: hidden;
+  background-image: radial-gradient(at 20% 50%, rgba(8,145,178,0.12) 0%, transparent 50%), radial-gradient(at 80% 50%, rgba(6,182,212,0.08) 0%, transparent 50%), radial-gradient(at 50% 100%, rgba(8,145,178,0.06) 0%, transparent 40%);
+  background-size: 200% 200%; animation: darkGradient 15s ease-in-out infinite;
+}
+@keyframes darkGradient { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+.problem-content { max-width: 640px; margin: 0 auto; text-align: center; }
+.problem-title { font-size: clamp(28px, 4vw, 40px); font-weight: 800; line-height: 1.4; letter-spacing: -0.5px; color: var(--text-inv); margin-bottom: 32px; }
+.problem-title .hl { color: var(--primary); }
+.problem-body { font-size: 17px; line-height: 1.9; color: rgba(255,255,255,0.4); margin-bottom: 40px; font-weight: 400; letter-spacing: -0.2px; }
+.problem-body strong { color: rgba(255,255,255,0.8); font-weight: 600; }
+.problem-divider { width: 40px; height: 2px; background: var(--primary); margin: 0 auto 40px; opacity: 0.5; }
+.problem-answer { font-size: 28px; font-weight: 700; color: var(--text-inv); letter-spacing: -0.4px; line-height: 1.5; }
+.problem-answer strong { color: var(--primary); }
+
+/* ===== SECTION COMMON ===== */
+.section-label { font-size: 12px; font-weight: 700; color: var(--primary); text-transform: uppercase; letter-spacing: 3px; text-align: center; margin-bottom: 16px; }
+.section-title { font-size: clamp(30px, 4.5vw, 44px); font-weight: 800; text-align: center; letter-spacing: -0.8px; margin-bottom: 16px; line-height: 1.2; }
+.section-desc { text-align: center; color: #555; font-size: 18px; max-width: 580px; margin: 0 auto 72px; line-height: 1.6; font-weight: 500; letter-spacing: -0.2px; }
+
+/* ===== HOW IT WORKS ===== */
+.how { padding: 160px 0; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.step {
+  padding: 48px 32px; border-radius: var(--radius-xl); border: 1px solid var(--border);
+  text-align: center; transition: all 0.4s var(--ease); background: var(--bg);
+  position: relative; overflow: hidden;
+}
+.step:hover { transform: translateY(-4px); box-shadow: 0 20px 60px rgba(0,0,0,0.06); border-color: rgba(8,145,178,0.12); }
+.step-num { font-size: 64px; font-weight: 900; color: rgba(0,0,0,0.04); line-height: 1; margin-bottom: 24px; letter-spacing: -4px; }
+.step:hover .step-num { color: rgba(8,145,178,0.1); }
+.step-icon { width: 48px; height: 48px; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center; }
+.step-title { font-size: 19px; font-weight: 800; margin-bottom: 10px; letter-spacing: -0.5px; }
+.step-desc { font-size: 14px; color: var(--muted); line-height: 1.65; font-weight: 400; }
+
+/* ===== FEATURES (BENTO) ===== */
+.features { padding: 160px 0; background: var(--bg-muted); }
+.bento { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.bento-card {
+  padding: 44px 36px; border-radius: var(--radius-xl); border: 1px solid rgba(0,0,0,0.04);
+  background: var(--bg); transition: all 0.4s var(--ease); position: relative; overflow: hidden;
+}
+.bento-card:hover { transform: translateY(-4px); box-shadow: 0 20px 60px rgba(0,0,0,0.05); }
+.bento-card.wide { grid-column: 1 / -1; }
+.bento-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-bottom: 24px; }
+.bento-icon.cyan { background: rgba(8,145,178,0.08); }
+.bento-icon.amber { background: rgba(245,158,11,0.08); }
+.bento-icon.green { background: rgba(16,185,129,0.08); }
+.bento-title { font-size: 20px; font-weight: 800; margin-bottom: 10px; letter-spacing: -0.5px; }
+.bento-desc { font-size: 15px; color: var(--muted); line-height: 1.65; font-weight: 400; }
+
+/* ===== USE CASES ===== */
+.usecases { padding: 160px 0; }
+.cases-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.case-card {
+  padding: 32px; border-radius: var(--radius-lg); border: 1px solid rgba(0,0,0,0.05);
+  background: var(--bg); transition: all 0.3s var(--ease); display: flex; gap: 16px;
+  position: relative; overflow: hidden;
+}
+.case-card:hover { transform: translateY(-3px); box-shadow: 0 12px 40px rgba(0,0,0,0.05); }
+.case-num { font-size: 32px; font-weight: 900; color: rgba(0,0,0,0.06); flex-shrink: 0; line-height: 1; letter-spacing: -2px; margin-top: 2px; }
+.case-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.3px; line-height: 1.4; }
+.case-desc { font-size: 14px; color: var(--muted); line-height: 1.6; font-weight: 400; }
+
+/* ===== PRICING ===== */
+.pricing { padding: 160px 0; background: var(--bg-muted); }
+.pricing-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; max-width: 720px; margin: 0 auto; }
+.price-card { padding: 44px 36px; border-radius: var(--radius-xl); border: 1px solid var(--border); transition: all 0.3s var(--ease); background: var(--bg); }
+.price-card.popular { border: 2px solid var(--primary); position: relative; }
+.price-card.popular::before { content: 'POPULAR'; position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: var(--primary); color: var(--text-inv); font-size: 10px; font-weight: 700; padding: 4px 16px; border-radius: 100px; letter-spacing: 1.5px; }
+.price-label { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+.price-amount { font-size: 48px; font-weight: 900; letter-spacing: -2px; margin-bottom: 4px; }
+.price-period { font-size: 15px; color: var(--muted); font-weight: 400; }
+.price-desc { font-size: 14px; color: var(--muted); margin-bottom: 28px; }
+.price-features { list-style: none; margin-bottom: 32px; }
+.price-features li { font-size: 14px; color: #555; padding: 9px 0; border-bottom: 1px solid rgba(0,0,0,0.04); display: flex; align-items: center; gap: 8px; font-weight: 500; letter-spacing: -0.2px; }
+.price-features li:last-child { border-bottom: none; }
+.price-check { font-size: 14px; background: linear-gradient(180deg, #0891B2, #06B6D4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 800; }
+.price-btn { display: block; width: 100%; padding: 14px; border-radius: var(--radius); font-size: 15px; font-weight: 700; font-family: var(--font); text-align: center; text-decoration: none; transition: all 0.25s var(--ease); cursor: pointer; border: none; letter-spacing: -0.2px; position: relative; overflow: hidden; }
+.price-btn-primary { background: var(--primary); color: var(--text-inv); }
+.price-btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+.price-btn-outline { background: var(--bg); color: var(--text); box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.1); }
+.price-btn-outline:hover { box-shadow: inset 0 0 0 1.5px rgba(0,0,0,0.2); }
+
+/* ===== CTA ===== */
+.cta { padding: 120px 0; }
+.cta-card {
+  background: var(--bg-dark); border-radius: var(--radius-xl); padding: 100px 48px;
+  text-align: center; position: relative; overflow: hidden;
+}
+.cta-card::before { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 30% 50%, rgba(8,145,178,0.18) 0%, transparent 60%), radial-gradient(ellipse at 70% 50%, rgba(6,182,212,0.12) 0%, transparent 50%), radial-gradient(ellipse at 50% 80%, rgba(8,145,178,0.08) 0%, transparent 40%); pointer-events: none; animation: ctaGlow 10s ease-in-out infinite; }
+@keyframes ctaGlow { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
+.cta-card > * { position: relative; z-index: 1; }
+.cta-title { font-size: clamp(30px, 4.5vw, 44px); font-weight: 800; color: var(--text-inv); margin-bottom: 16px; letter-spacing: -1.5px; line-height: 1.2; }
+.cta-sub { color: rgba(255,255,255,0.4); font-size: 16px; margin-bottom: 44px; font-weight: 400; }
+.cta-buttons { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; }
+.cta-btn { display: inline-flex; align-items: center; gap: 10px; padding: 14px 24px; border-radius: var(--radius); text-decoration: none; transition: all 0.25s var(--ease); cursor: pointer; border: none; font-family: var(--font); position: relative; overflow: hidden; }
+.cta-btn-white { background: #fff; color: var(--text); }
+.cta-btn-white:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(255,255,255,0.15); }
+.cta-btn-ghost { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.1); }
+.cta-btn-ghost:hover { background: rgba(255,255,255,0.1); transform: translateY(-2px); }
+.cta-note { color: rgba(255,255,255,0.25); font-size: 13px; margin-top: 24px; font-weight: 400; }
+
+/* ===== FOOTER ===== */
+.footer { padding: 40px 0; border-top: 1px solid var(--border); }
+.footer-inner { display: flex; align-items: center; justify-content: space-between; }
+.footer-logo { display: flex; align-items: center; text-decoration: none; }
+.footer-logo-img { height: 18px; width: auto; opacity: 0.35; }
+.footer-links { display: flex; gap: 24px; list-style: none; }
+.footer-links a { font-size: 13px; color: var(--muted-light); text-decoration: none; transition: color 0.2s; font-weight: 400; }
+.footer-links a:hover { color: var(--muted); }
+.footer-right { text-align: right; }
+.footer-company { font-size: 12px; color: var(--muted-light); margin-bottom: 2px; }
+.footer-copy { font-size: 12px; color: var(--muted-light); }
+
+/* ===== ICON DESIGN LANGUAGE: CAPTURE FRAME + FLASH + GLOW ===== */
+
+/* Hero background capture frame motif */
+.hero::after {
+  content: '';
+  position: absolute;
+  width: 70%; max-width: 700px; height: 500px;
+  left: 50%; top: 45%;
+  transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 0;
+  background:
+    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 0 0 / 60px 2px,
+    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 0 0 / 2px 60px,
+    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 100% 0 / 60px 2px,
+    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 100% 0 / 2px 60px,
+    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 0 100% / 60px 2px,
+    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 0 100% / 2px 60px,
+    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 100% 100% / 60px 2px,
+    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 100% 100% / 2px 60px;
+}
+
+/* Button flash sweep on hover */
+.app-btn::after, .cta-btn::after, .price-btn::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.25) 48%, rgba(255,255,255,0.35) 50%, rgba(255,255,255,0.25) 52%, transparent 70%);
+  transform: translateX(-120%);
+  transition: transform 0.6s ease;
+  border-radius: inherit;
+}
+.app-btn:hover::after, .cta-btn:hover::after, .price-btn:hover::after {
+  transform: translateX(120%);
+}
+
+/* Card hover capture frame corners */
+.bento-card::after, .step::after, .case-card::after {
+  content: '';
+  position: absolute; inset: 18px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s var(--ease);
+  background:
+    linear-gradient(rgba(8,145,178,0.5), rgba(8,145,178,0.5)) no-repeat 0 0 / 24px 4.5px,
+    linear-gradient(rgba(8,145,178,0.5), rgba(8,145,178,0.5)) no-repeat 0 0 / 4.5px 24px,
+    linear-gradient(rgba(8,145,178,0.5), rgba(8,145,178,0.5)) no-repeat 100% 0 / 24px 4.5px,
+    linear-gradient(rgba(8,145,178,0.5), rgba(8,145,178,0.5)) no-repeat 100% 0 / 4.5px 24px,
+    linear-gradient(rgba(8,145,178,0.5), rgba(8,145,178,0.5)) no-repeat 0 100% / 24px 4.5px,
+    linear-gradient(rgba(8,145,178,0.5), rgba(8,145,178,0.5)) no-repeat 0 100% / 4.5px 24px,
+    linear-gradient(rgba(8,145,178,0.5), rgba(8,145,178,0.5)) no-repeat 100% 100% / 24px 4.5px,
+    linear-gradient(rgba(8,145,178,0.5), rgba(8,145,178,0.5)) no-repeat 100% 100% / 4.5px 24px;
+  filter: drop-shadow(0 0 6px rgba(8,145,178,0.4));
+  animation: framePulse 2s ease-in-out infinite paused;
+}
+.bento-card:hover::after, .step:hover::after, .case-card:hover::after {
+  opacity: 1;
+  animation-play-state: running;
+}
+@keyframes framePulse {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(8,145,178,0.3)); }
+  50% { filter: drop-shadow(0 0 10px rgba(8,145,178,0.6)); }
+}
+
+/* Phone periodic capture flash */
+.phone::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: white;
+  border-radius: inherit;
+  pointer-events: none;
+  animation: captureFlash 8s 3s ease-out infinite;
+  z-index: 10;
+}
+@keyframes captureFlash {
+  0%, 8%, 100% { opacity: 0; }
+  3% { opacity: 0.45; }
+}
+
+/* Hero app icon sparkle */
+.hero-app-icon { position: relative; margin-bottom: 20px; }
+.app-icon-img { width: 72px; height: 72px; border-radius: 18px; box-shadow: 0 8px 32px rgba(0,0,0,0.12); transition: transform 0.3s var(--ease); }
+.hero-app-icon:hover .app-icon-img { transform: scale(1.05); }
+.hero-app-icon::after {
+  content: '';
+  position: absolute;
+  top: -6px; right: -6px;
+  width: 14px; height: 14px;
+  background: white;
+  clip-path: polygon(50% 0%, 61% 35%, 100% 50%, 61% 65%, 50% 100%, 39% 65%, 0% 50%, 39% 35%);
+  animation: sparkle 4s 1s ease-in-out infinite;
+  filter: drop-shadow(0 0 4px rgba(255,255,255,0.8));
+}
+@keyframes sparkle {
+  0%, 70%, 100% { opacity: 0; transform: scale(0.5) rotate(0deg); }
+  35% { opacity: 1; transform: scale(1) rotate(90deg); }
+}
+
+/* CTA app icon glow effect */
+.cta-app-icon {
+  width: 64px; height: 64px; border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 40px rgba(8,145,178,0.15);
+  margin-bottom: 28px;
+  animation: iconGlow 4s ease-in-out infinite;
+}
+@keyframes iconGlow {
+  0%, 100% { box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 40px rgba(8,145,178,0.15); }
+  50% { box-shadow: 0 8px 32px rgba(0,0,0,0.3), 0 0 60px rgba(8,145,178,0.25); }
+}
+
+/* Capture frame corners in problem section */
+.problem::after {
+  content: '';
+  position: absolute;
+  width: 60%; max-width: 500px; height: 60%;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none; z-index: 0;
+  background:
+    linear-gradient(rgba(8,145,178,0.08), rgba(8,145,178,0.08)) no-repeat 0 0 / 40px 1.5px,
+    linear-gradient(rgba(8,145,178,0.08), rgba(8,145,178,0.08)) no-repeat 0 0 / 1.5px 40px,
+    linear-gradient(rgba(8,145,178,0.08), rgba(8,145,178,0.08)) no-repeat 100% 0 / 40px 1.5px,
+    linear-gradient(rgba(8,145,178,0.08), rgba(8,145,178,0.08)) no-repeat 100% 0 / 1.5px 40px,
+    linear-gradient(rgba(8,145,178,0.08), rgba(8,145,178,0.08)) no-repeat 0 100% / 40px 1.5px,
+    linear-gradient(rgba(8,145,178,0.08), rgba(8,145,178,0.08)) no-repeat 0 100% / 1.5px 40px,
+    linear-gradient(rgba(8,145,178,0.08), rgba(8,145,178,0.08)) no-repeat 100% 100% / 40px 1.5px,
+    linear-gradient(rgba(8,145,178,0.08), rgba(8,145,178,0.08)) no-repeat 100% 100% / 1.5px 40px;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+  .nav-links li:not(:last-child) { display: none; }
+  .hero { padding: 140px 0 80px; }
+  .hero h1 { letter-spacing: -2px; }
+  .app-buttons { flex-direction: column; align-items: center; }
+  .steps { grid-template-columns: 1fr; }
+  .bento { grid-template-columns: 1fr; }
+  .bento-card.wide { grid-column: 1; }
+  .pricing-grid { grid-template-columns: 1fr; }
+  .cases-grid { grid-template-columns: 1fr; }
+  .float-capture, .float-reminder { display: none; }
+  .hero::after, .problem::after { display: none; }
+  .phone { width: 260px; }
+  .cta-card { padding: 64px 24px; border-radius: 20px; }
+  .cta-buttons { flex-direction: column; align-items: center; }
+  .footer-inner { flex-direction: column; gap: 20px; text-align: center; }
+  .footer-right { text-align: center; }
+  .footer-links { flex-wrap: wrap; justify-content: center; }
+  .problem { padding: 120px 0; }
+  .how, .features, .pricing, .usecases { padding: 120px 0; }
+  .section-desc { margin-bottom: 48px; }
+}
+</style>
+</head>
+<body>
+
+<!-- Animated Background -->
+<div class="bg-orbs">
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</div>
+<div class="mouse-glow" id="mouseGlow"></div>
+
+<!-- Nav -->
+<nav class="nav" id="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <img src="로고.svg" alt="Capture ToDo" class="nav-logo-img">
+    </a>
+    <ul class="nav-links">
+      <li><a href="#how">How it works</a></li>
+      <li><a href="#features">Features</a></li>
+      <li><a href="#pricing">Pricing</a></li>
+      <li><a href="#download" class="nav-cta">Download</a></li>
+      <li><a href="ko.html" class="nav-lang">한국어</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-label reveal">
+      <span class="hero-label-dot"></span>
+      AI that turns screenshots into to-dos
+    </div>
+    <h1 class="reveal d1">
+      Capture it,<br>
+      <span class="accent">it becomes a to-do.</span>
+    </h1>
+    <p class="hero-sub-small reveal d1">Share a screenshot and AI automatically creates a to-do.</p>
+    <p class="hero-sub reveal d2">
+      <strong style="color: var(--text); font-weight: 700; font-size: 21px;">Every screenshot you take "to deal with later"</strong> — share it with us.<br>
+      AI understands your intent, creates to-dos, and sends reminders until you're done.
+    </p>
+
+    <div class="hero-app-icon reveal d3">
+      <img src="아이콘.png" alt="Capture To Do" class="app-icon-img">
+    </div>
+    <div class="app-buttons reveal d4">
+      <a href="javascript:void(0)" class="app-btn app-btn-dark" onclick="alert('Coming soon to the App Store. Stay tuned!')">
+        <span class="app-btn-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+        </span>
+        <span class="app-btn-text">
+          <span class="app-btn-label">Download on the</span>
+          <span class="app-btn-store">App Store</span>
+        </span>
+      </a>
+      <a href="javascript:void(0)" class="app-btn app-btn-light" onclick="alert('Coming soon to Google Play. Stay tuned!')">
+        <span class="app-btn-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3.609 1.814L13.792 12 3.61 22.186a1.2 1.2 0 0 1-.41-.92V2.734c0-.345.148-.668.409-.92z" fill="#4285F4"/><path d="M17.219 8.56l-3.427 3.44 3.427 3.44 3.874-2.193c.588-.334.588-1.16 0-1.494L17.22 8.56z" fill="#FBBC04"/><path d="M3.609 1.814L13.792 12l3.427-3.44L5.984.596c-.434-.246-.974-.27-1.424-.02-.227.127-.412.3-.551.508l-.4.73z" fill="#34A853"/><path d="M13.792 12L3.61 22.186c.17.24.398.428.667.545.45.196.964.17 1.388-.067L17.22 15.44 13.792 12z" fill="#EA4335"/></svg>
+        </span>
+        <span class="app-btn-text">
+          <span class="app-btn-label">GET IT ON</span>
+          <span class="app-btn-store">Google Play</span>
+        </span>
+      </a>
+    </div>
+
+    <a href="#how" class="hero-link reveal d4">
+      How does it work?
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+    </a>
+
+    <!-- Mockup -->
+    <div class="hero-mockup reveal d5">
+      <div class="mockup-wrap" id="mockupWrap">
+
+        <div class="float-capture">
+          <div class="float-capture-img">
+            <div class="imsg-mock">
+              <div class="imsg-header">
+                <div class="imsg-name">Sarah</div>
+                <div class="imsg-sub">iMessage</div>
+              </div>
+              <div class="imsg-time">Today 11:42 AM</div>
+              <div class="imsg-bubble recv">Hey! Don't forget to pay the electricity bill, it's due this Friday 💡</div>
+            </div>
+          </div>
+          <div class="float-capture-body">
+            <div class="float-capture-icon">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+            <div>
+              <div class="float-capture-label">Screenshot → Share</div>
+              <div class="float-capture-sub">Sent to Capture To Do</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="phone-header">
+              <span class="phone-title">Capture To Do</span>
+              <span class="phone-date">Today</span>
+            </div>
+
+            <div class="todo-item done-anim">
+              <div class="todo-check checked">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </div>
+              <div class="todo-body">
+                <div class="todo-text done">Buy milk and eggs</div>
+                <div class="todo-meta">Completed · 10:30</div>
+              </div>
+            </div>
+
+            <div class="todo-item normal-anim">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-text">Reply to David's text</div>
+                <div class="todo-meta">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                  By 2:00 PM
+                </div>
+              </div>
+              <span class="todo-tag tag-remind">Reminder</span>
+            </div>
+
+            <div class="todo-item new">
+              <div class="todo-check primary"></div>
+              <div class="todo-body">
+                <div class="todo-text">Pay electricity bill</div>
+                <div class="todo-meta" style="color:var(--primary)">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="12" cy="12" r="3"/></svg>
+                  Just converted from capture
+                </div>
+              </div>
+              <span class="todo-tag tag-new">NEW</span>
+            </div>
+
+            <div class="todo-item normal-anim">
+              <div class="todo-check"></div>
+              <div class="todo-body">
+                <div class="todo-text">Register for CS101 by Friday</div>
+                <div class="todo-meta">Tomorrow</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="float-reminder">
+          <div class="float-reminder-head">
+            <div class="float-reminder-bell">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#B45309" stroke-width="2.5" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            </div>
+            <div>
+              <div class="float-reminder-title">Reminder</div>
+              <div class="float-reminder-time">2 min ago</div>
+            </div>
+          </div>
+          <div class="float-reminder-body">
+            You haven't paid the <strong>electricity bill</strong> yet. The due date is approaching!
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Problem (Dark) -->
+<section class="problem" id="problem">
+  <div class="container">
+    <div class="problem-content">
+      <h2 class="problem-title reveal">
+        Tasks, links, things to follow up on.<br>
+        <span class="hl">You screenshot them and save them somewhere, right?</span>
+      </h2>
+      <p class="problem-body reveal d1">
+        When was the last time you actually went back to check?<br>
+        The moment you save it, <strong>your intention to act quietly fades away.</strong><br>
+        <strong>You saved it, but never looked back and followed through.</strong>
+      </p>
+      <div class="problem-divider reveal d2"></div>
+      <p class="problem-answer reveal d3">
+        One screenshot, and <strong>you'll never forget again.</strong>
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- How it Works -->
+<section class="how" id="how">
+  <div class="container">
+    <div class="section-label reveal">HOW IT WORKS</div>
+    <h2 class="section-title reveal d1">Just share it to Capture To Do</h2>
+    <p class="section-desc reveal d2">Capture and tap share. That's it — AI handles the rest.</p>
+
+    <div class="steps">
+      <div class="step reveal d1">
+        <div class="step-num">01</div>
+        <div class="step-icon">
+          <svg width="40" height="40" viewBox="0 0 48 48" fill="none">
+            <rect x="10" y="10" width="28" height="28" rx="6" stroke="var(--primary)" stroke-width="2"/>
+            <circle cx="24" cy="24" r="5" stroke="var(--primary)" stroke-width="2"/>
+            <circle cx="24" cy="24" r="1.5" fill="var(--primary)"/>
+          </svg>
+        </div>
+        <h3 class="step-title">Capture</h3>
+        <p class="step-desc">Chat, email, web — whenever you<br>see something that needs to be done, capture it.</p>
+      </div>
+
+      <div class="step reveal d2">
+        <div class="step-num">02</div>
+        <div class="step-icon">
+          <svg width="40" height="40" viewBox="0 0 48 48" fill="none">
+            <rect x="12" y="8" width="24" height="32" rx="5" stroke="var(--primary)" stroke-width="2"/>
+            <path d="M24 32l6-4H18l6 4z" stroke="var(--primary)" stroke-width="2" stroke-linejoin="round"/>
+            <circle cx="24" cy="22" r="4" stroke="var(--primary)" stroke-width="2"/>
+          </svg>
+        </div>
+        <h3 class="step-title">Share</h3>
+        <p class="step-desc">Tap the share button and<br>send it straight to Capture To Do.</p>
+      </div>
+
+      <div class="step reveal d3">
+        <div class="step-num">03</div>
+        <div class="step-icon">
+          <svg width="40" height="40" viewBox="0 0 48 48" fill="none">
+            <rect x="10" y="12" width="28" height="24" rx="4" stroke="var(--primary)" stroke-width="2"/>
+            <path d="M18 24l4 4 8-8" stroke="#10B981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h3 class="step-title">Get it done</h3>
+        <p class="step-desc">AI converts it into a to-do and<br>reminds you until it's done.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Features (Bento) -->
+<section class="features" id="features">
+  <div class="container">
+    <div class="section-label reveal">FEATURES</div>
+    <h2 class="section-title reveal d1">The AI behind every capture</h2>
+    <p class="section-desc reveal d2">You just capture. AI does everything else.</p>
+
+    <div class="bento">
+      <div class="bento-card reveal d1">
+        <div class="bento-icon green">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2" stroke-linecap="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+        </div>
+        <h3 class="bento-title">Zero input</h3>
+        <p class="bento-desc">No typing needed. Capture and tap share — your to-do is created instantly.</p>
+      </div>
+
+      <div class="bento-card reveal d2">
+        <div class="bento-icon amber">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </div>
+        <h3 class="bento-title">Smart reminders</h3>
+        <p class="bento-desc">AI detects time cues like "by Friday" or "3 PM tomorrow" in your screenshots and sends reminders at the right moment.</p>
+      </div>
+
+      <div class="bento-card wide reveal d3">
+        <div class="bento-icon cyan">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        </div>
+        <h3 class="bento-title">Persistent follow-up</h3>
+        <p class="bento-desc">If you don't complete it, we'll keep reminding you. "You still haven't done this!" — never forget again.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Use Cases -->
+<section class="usecases" id="usecases">
+  <div class="container">
+    <div class="section-label reveal">USE CASES</div>
+    <h2 class="section-title reveal d1">Capture in moments like these</h2>
+    <p class="section-desc reveal d2">Never miss another <strong style="color:var(--text); font-weight:700;">"I should do that..."</strong> moment</p>
+
+    <div class="cases-grid">
+      <div class="case-card reveal d1">
+        <div class="case-num">01</div>
+        <div>
+          <h3 class="case-title">When you get a message you can't forget</h3>
+          <p class="case-desc">ex. "Please send the expense report~" — capture it and it becomes a to-do with reminders</p>
+        </div>
+      </div>
+      <div class="case-card reveal d2">
+        <div class="case-num">02</div>
+        <div>
+          <h3 class="case-title">When you need to reply to an email later</h3>
+          <p class="case-desc">Too busy now? One capture ensures you never forget to reply</p>
+        </div>
+      </div>
+      <div class="case-card reveal d3">
+        <div class="case-num">03</div>
+        <div>
+          <h3 class="case-title">When you find info you need to revisit later</h3>
+          <p class="case-desc">Threads, Instagram, web — capture any screen → "Check this" auto-created</p>
+        </div>
+      </div>
+      <div class="case-card reveal d4">
+        <div class="case-num">04</div>
+        <div>
+          <h3 class="case-title">When you spot a product you want to buy later</h3>
+          <p class="case-desc">That item you skipped because you had no time — capture it and we'll remind you to revisit</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Pricing -->
+<section class="pricing" id="pricing">
+  <div class="container">
+    <div class="section-label reveal">PRICING</div>
+    <h2 class="section-title reveal d1">Simple pricing</h2>
+    <p class="section-desc reveal d2">Start free, upgrade when you need more.</p>
+
+    <div class="pricing-grid">
+      <div class="price-card reveal d1">
+        <div class="price-label">Free</div>
+        <div class="price-amount">$0</div>
+        <div class="price-period">/ month</div>
+        <div class="price-desc">Basic free plan</div>
+        <ul class="price-features">
+          <li><span class="price-check">&#10003;</span> 3 screenshots per day</li>
+          <li><span class="price-check">&#10003;</span> Basic search</li>
+          <li><span class="price-check">&#10003;</span> Basic summary & to-do creation</li>
+        </ul>
+        <a href="javascript:void(0)" class="price-btn price-btn-outline" onclick="alert('Coming soon!')">Get started free</a>
+      </div>
+
+      <div class="price-card popular reveal d2">
+        <div class="price-label">Pro</div>
+        <div class="price-amount">$4</div>
+        <div class="price-period">/ month</div>
+        <div class="price-desc">For professionals & founders</div>
+        <ul class="price-features">
+          <li><span class="price-check">&#10003;</span> Unlimited screenshots</li>
+          <li><span class="price-check">&#10003;</span> Advanced contextual search (Acto AI)</li>
+          <li><span class="price-check">&#10003;</span> AI Task management (Acto AI)</li>
+          <li><span class="price-check">&#10003;</span> Smart reminders</li>
+        </ul>
+        <a href="javascript:void(0)" class="price-btn price-btn-primary" onclick="alert('Coming soon!')">Start Pro</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="cta" id="download">
+  <div class="container">
+    <div class="cta-card reveal">
+      <img src="아이콘.png" alt="Capture To Do" class="cta-app-icon">
+      <h2 class="cta-title">Screenshots become actions,<br>not just records</h2>
+      <p class="cta-sub">Stop saving things where they'll be forgotten. Start now.</p>
+      <div class="cta-buttons">
+        <a href="javascript:void(0)" class="cta-btn cta-btn-white" onclick="alert('Coming soon to the App Store. Stay tuned!')">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+          <span class="app-btn-text">
+            <span class="app-btn-label">Download on the</span>
+            <span class="app-btn-store">App Store</span>
+          </span>
+        </a>
+        <a href="javascript:void(0)" class="cta-btn cta-btn-ghost" onclick="alert('Coming soon to Google Play. Stay tuned!')">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M3.609 1.814L13.792 12 3.61 22.186a1.2 1.2 0 0 1-.41-.92V2.734c0-.345.148-.668.409-.92z" fill="#fff"/><path d="M17.219 8.56l-3.427 3.44 3.427 3.44 3.874-2.193c.588-.334.588-1.16 0-1.494L17.22 8.56z" fill="rgba(255,255,255,0.8)"/><path d="M3.609 1.814L13.792 12l3.427-3.44L5.984.596c-.434-.246-.974-.27-1.424-.02-.227.127-.412.3-.551.508l-.4.73z" fill="rgba(255,255,255,0.6)"/><path d="M13.792 12L3.61 22.186c.17.24.398.428.667.545.45.196.964.17 1.388-.067L17.22 15.44 13.792 12z" fill="rgba(255,255,255,0.9)"/></svg>
+          <span class="app-btn-text">
+            <span class="app-btn-label">GET IT ON</span>
+            <span class="app-btn-store">Google Play</span>
+          </span>
+        </a>
+      </div>
+      <p class="cta-note">Free plan available · No credit card required</p>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="footer">
+  <div class="container footer-inner">
+    <a href="#" class="footer-logo">
+      <img src="로고.svg" alt="Capture ToDo" class="footer-logo-img">
+    </a>
+    <ul class="footer-links">
+      <li><a href="#">Terms</a></li>
+      <li><a href="#">Privacy</a></li>
+      <li><a href="#">Support</a></li>
+      <li><a href="#">Blog</a></li>
+    </ul>
+    <div class="footer-right">
+      <div class="footer-company">Manwol Inc.</div>
+      <span class="footer-copy">&copy; 2026 Capture To Do. All rights reserved.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+// Nav scroll
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => {
+  nav.classList.toggle('scrolled', window.scrollY > 20);
+});
+
+// Reveal on scroll
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => { if (e.isIntersecting) e.target.classList.add('visible'); });
+}, { threshold: 0.1, rootMargin: '0px 0px -80px 0px' });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+
+// Mouse glow
+const glow = document.getElementById('mouseGlow');
+document.addEventListener('mousemove', (e) => {
+  glow.style.left = e.clientX + 'px';
+  glow.style.top = e.clientY + 'px';
+  if (!glow.classList.contains('active')) glow.classList.add('active');
+});
+
+// Smooth scroll
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', function(e) {
+    const href = this.getAttribute('href');
+    if (href === '#') return;
+    e.preventDefault();
+    document.querySelector(href)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+});
+
+// Subtle parallax on mockup
+const mockupWrap = document.getElementById('mockupWrap');
+if (mockupWrap) {
+  document.addEventListener('mousemove', (e) => {
+    const x = (e.clientX / window.innerWidth - 0.5);
+    const y = (e.clientY / window.innerHeight - 0.5);
+    mockupWrap.style.transform = `perspective(1200px) rotateY(${x * 3}deg) rotateX(${y * -2}deg)`;
+  });
+}
+</script>
+
+</body>
+</html>
