@@ -361,23 +361,6 @@ body::after {
 /* ===== ICON DESIGN LANGUAGE: CAPTURE FRAME + FLASH + GLOW ===== */
 
 /* Hero background capture frame motif */
-.hero::after {
-  content: '';
-  position: absolute;
-  width: 70%; max-width: 700px; height: 500px;
-  left: 50%; top: 45%;
-  transform: translate(-50%, -50%);
-  pointer-events: none; z-index: 0;
-  background:
-    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 0 0 / 60px 2px,
-    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 0 0 / 2px 60px,
-    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 100% 0 / 60px 2px,
-    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 100% 0 / 2px 60px,
-    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 0 100% / 60px 2px,
-    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 0 100% / 2px 60px,
-    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 100% 100% / 60px 2px,
-    linear-gradient(rgba(8,145,178,0.06), rgba(8,145,178,0.06)) no-repeat 100% 100% / 2px 60px;
-}
 
 /* Button flash sweep on hover */
 .app-btn::after, .cta-btn::after, .price-btn::after {
@@ -545,7 +528,7 @@ body::after {
     </div>
     <h1 class="reveal d1">
       자주 까먹나요?<br>
-      <span class="accent">이제 캡처 한 번이면 잊지 않습니다.</span>
+      <span class="accent">캡처 한 번이면 잊지 않습니다.</span>
     </h1>
     <p class="hero-sub-small reveal d1">캡처 후 공유하면 AI가 자동으로 To-Do를 생성합니다.</p>
     <p class="hero-sub reveal d2">
